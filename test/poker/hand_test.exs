@@ -28,7 +28,7 @@ defmodule Poker.HandTest do
   test "betting, raising, and folding", %{players: players, table: table} do
     [player_one, player_two, player_thr] = players
 
-    {:ok, hand} = Poker.Hand.start(table, players)
+    {:ok, hand} = Poker.Hand.start_link(table, players)
 
     # Pre-Flop
     assert_receive {:player_one, {:hand_state, %{active: false, board: [], pot: 15}}}

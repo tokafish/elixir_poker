@@ -22,12 +22,10 @@ defmodule Poker.EndToEndTest do
       player
     end
 
-    {:ok, table} = Poker.Table.start_link(3)
-
-    {:ok, [table: table, players: players]}
+    {:ok, [table: :table_one, players: players, hand: :table_one_hand]}
   end
 
-  test "betting, raising, and folding", %{table: table, players: players} do
+  test "betting, raising, and folding", %{table: table, players: players, hand: hand} do
     [player_one, player_two, player_thr] = players
 
     as_player player_one, do: Poker.Table.sit(table, 1)
@@ -38,7 +36,16 @@ defmodule Poker.EndToEndTest do
     as_player player_two, do: Poker.Table.buy_in(table, 1000)
     as_player player_thr, do: Poker.Table.buy_in(table, 800)
 
-    {:ok, hand} = Poker.Table.deal(table)
+    Process.whereis(table) |> Process.exit(:kill)
+
+    :timer.sleep(100)
+
+    {:ok, _} = Poker.Table.deal(table)
+
+    # :timer.sleep(500)
+
+    # Process.whereis(hand) |> Process.exit(:kill)
+    # :timer.sleep(500)
 
     as_player player_thr, do: :ok = Poker.Hand.bet(hand, 10)
     as_player player_one, do: :ok = Poker.Hand.bet(hand, 5)
@@ -63,6 +70,8 @@ defmodule Poker.EndToEndTest do
     as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
     as_player player_two, do: :ok = Poker.Hand.bet(hand, 100)
     as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
+
+    :timer.sleep(100)
 
     as_player player_one, do: Poker.Table.cash_out(table)
     as_player player_two, do: Poker.Table.cash_out(table)

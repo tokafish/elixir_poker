@@ -12,4 +12,8 @@ defmodule Mocks.Table do
   def handle_call({:update_balance, _player, _delta}, _from, state) do
     {:reply, :ok, state}
   end
+
+  def handle_cast(:hand_finished, state) do
+    {:noreply, state}
+  end
 end

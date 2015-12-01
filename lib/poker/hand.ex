@@ -1,13 +1,13 @@
 defmodule Poker.Hand do
   use GenServer
 
-  def start(table, players, config \\ [])
+  def start_link(table, players, config \\ [], opts \\ [])
 
-  def start(table, players, config) when length(players) > 1 do
-    GenServer.start(__MODULE__, [table, players, config])
+  def start_link(table, players, config, opts) when length(players) > 1 do
+    GenServer.start_link(__MODULE__, [table, players, config], opts)
   end
 
-  def start(_table, _players, _config), do: {:error, :not_enough_players}
+  def start_link(_table, _players, _config, _opts), do: {:error, :not_enough_players}
 
   def bet(hand, amount) do
     GenServer.call(hand, {:bet, amount})
@@ -117,6 +117,7 @@ defmodule Poker.Hand do
 
   defp reply_or_stop(state) do
     if Map.has_key?(state, :finished) do
+      Poker.Table.hand_finished(state.table)
       {:stop, :normal, :ok, state}
     else
       {:reply, :ok, state}

@@ -5,7 +5,9 @@ defmodule Poker.TableTest do
 
   setup do
     Poker.Bank.start_link
-    {:ok, table} = Poker.Table.start_link(@num_seats)
+    players = :ets.new(:players, [:public])
+
+    {:ok, table} = Poker.Table.start_link(nil, players, :table_name, @num_seats)
     {:ok, [table: table]}
   end
 
