@@ -1,8 +1,6 @@
 defmodule Poker.HandTest do
   use ExUnit.Case, async: false
 
-  import Mocks.Player, only: [as_player: 2]
-
   defp cards do
     "As Jd " <> # player one's cards
     "Jc Tc " <> # player two's cards
@@ -15,12 +13,7 @@ defmodule Poker.HandTest do
   setup do
     Mocks.StackedDeck.stack(cards)
     {:ok, table} = Mocks.Table.start_link
-
-    players = ~w(player_one player_two player_three) |>
-      Enum.map(fn name ->
-        {:ok, player} = Mocks.Player.start_link(String.to_atom(name))
-        player
-      end)
+    players = [:one, :two, :three]
 
     {:ok, [players: players, table: table]}
   end
@@ -28,47 +21,38 @@ defmodule Poker.HandTest do
   test "betting, raising, and folding", %{players: players, table: table} do
     [player_one, player_two, player_thr] = players
 
-    {:ok, hand} = Poker.Hand.start_link(table, players)
-
+    {:ok, hand} = Poker.Hand.start_link("test_hand", table)
+    Poker.Hand.deal(hand, players)
     # Pre-Flop
-    assert_receive {:player_one, {:hand_state, %{active: false, board: [], pot: 15}}}
-    assert_receive {:player_two, {:hand_state, %{active: false, board: [], pot: 15}}}
-    assert_receive {:player_three, {:hand_state, %{active: true, board: [], pot: 15}}}
 
-    as_player player_thr, do: {:error, :not_enough} = Poker.Hand.bet(hand, 5)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 10)
-    assert_receive {:player_one, {:hand_state, %{active: true, board: [], pot: 25}}}
-    assert_receive {:player_two, {:hand_state, %{active: false, board: [], pot: 25}}}
-    assert_receive {:player_three, {:hand_state, %{active: false, board: [], pot: 25}}}
+    {:error, %{reason: :not_enough}} = Poker.Hand.bet(hand, player_thr, 5)
+    :ok = Poker.Hand.bet(hand, player_thr, 10)
 
-    as_player player_thr, do: {:error, :not_active} = Poker.Hand.bet(hand, 10)
-    as_player player_one, do: :ok = Poker.Hand.bet(hand, 5)
-    assert_receive {:player_one, {:hand_state, %{active: false, board: [], pot: 30}}}
-    assert_receive {:player_two, {:hand_state, %{active: true, board: [], pot: 30}}}
-    assert_receive {:player_three, {:hand_state, %{active: false, board: [], pot: 30}}}
+    {:error, %{reason: :not_active}} = Poker.Hand.bet(hand, player_thr, 10)
+    :ok = Poker.Hand.bet(hand, player_one, 5)
 
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
+    :ok = Poker.Hand.check(hand, player_two)
 
     # Flop
-    as_player player_one, do: :ok = Poker.Hand.check(hand)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 25)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_one, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 25)
+    :ok = Poker.Hand.check(hand, player_one)
+    :ok = Poker.Hand.bet(hand, player_two, 25)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.bet(hand, player_one, 50)
+    :ok = Poker.Hand.bet(hand, player_two, 25)
 
     # Turn
-    as_player player_one, do: :ok = Poker.Hand.check(hand)
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
-    as_player player_one, do: {:error, :not_active} = Poker.Hand.fold(hand)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_one, do: :ok = Poker.Hand.fold(hand)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 50)
+    :ok = Poker.Hand.check(hand, player_one)
+    :ok = Poker.Hand.check(hand, player_two)
+    {:error, %{reason: :not_active}} = Poker.Hand.fold(hand, player_one)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.fold(hand, player_one)
+    :ok = Poker.Hand.bet(hand, player_two, 50)
 
     # River
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
-    as_player player_thr, do: {:error, :insufficient_funds} = Poker.Hand.bet(hand, 500)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 100)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
+    :ok = Poker.Hand.check(hand, player_two)
+    {:error, %{reason: :insufficient_funds}} = Poker.Hand.bet(hand, player_thr, 500)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.bet(hand, player_two, 100)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
   end
 end

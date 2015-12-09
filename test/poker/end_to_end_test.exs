@@ -1,8 +1,6 @@
 defmodule Poker.EndToEndTest do
   use ExUnit.Case, async: false
 
-  import Mocks.Player, only: [as_player: 2]
-
   defp cards do
     "As Jd " <> # player three's cards
     "Jc Tc " <> # player one's cards
@@ -16,66 +14,67 @@ defmodule Poker.EndToEndTest do
     Mocks.StackedDeck.stack(cards)
     Poker.Bank.start_link
 
-    players = Enum.map ~w(player_one player_two player_three), fn (name) ->
-      {:ok, player} = Mocks.Player.start_link(String.to_atom(name))
+    players = Enum.map ~w(player_one player_two player_three), fn player ->
       Poker.Bank.deposit(player, 1000)
       player
     end
 
-    {:ok, [table: :table_one, players: players, hand: :table_one_hand]}
+    {:ok, _} = Poker.Table.Supervisor.start_link("test_table", 6)
+
+    {:ok, [table: Poker.Table.whereis("test_table"), players: players]}
   end
 
-  test "betting, raising, and folding", %{table: table, players: players, hand: hand} do
+  test "betting, raising, and folding", %{table: table, players: players} do
     [player_one, player_two, player_thr] = players
 
-    as_player player_one, do: Poker.Table.sit(table, 1)
-    as_player player_two, do: Poker.Table.sit(table, 2)
-    as_player player_thr, do: Poker.Table.sit(table, 3)
+    Poker.Table.sit(table, player_one, 1)
+    Poker.Table.sit(table, player_two, 2)
+    Poker.Table.sit(table, player_thr, 3)
 
-    as_player player_one, do: Poker.Table.buy_in(table, 1000)
-    as_player player_two, do: Poker.Table.buy_in(table, 1000)
-    as_player player_thr, do: Poker.Table.buy_in(table, 800)
+    Poker.Table.buy_in(table, player_one, 1000)
+    Poker.Table.buy_in(table, player_two, 1000)
+    Poker.Table.buy_in(table, player_thr, 800)
 
-    Process.whereis(table) |> Process.exit(:kill)
+    Process.exit(table, :kill)
 
     :timer.sleep(100)
+    table = Poker.Table.whereis("test_table")
 
-    {:ok, _} = Poker.Table.deal(table)
+    :ok = Poker.Table.deal(table)
+    hand = Poker.Table.get_state(table).hand |> Poker.Hand.whereis
 
     # :timer.sleep(500)
 
-    # Process.whereis(hand) |> Process.exit(:kill)
+    # :global.whereis_name(elem(hand, 1)) |> Process.exit(:kill)
     # :timer.sleep(500)
 
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 10)
-    as_player player_one, do: :ok = Poker.Hand.bet(hand, 5)
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
+    :ok = Poker.Hand.bet(hand, player_thr, 10)
+    :ok = Poker.Hand.bet(hand, player_one, 5)
+    :ok = Poker.Hand.check(hand, player_two)
 
     # Flop
-    as_player player_one, do: :ok = Poker.Hand.check(hand)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 25)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_one, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 25)
+    :ok = Poker.Hand.check(hand, player_one)
+    :ok = Poker.Hand.bet(hand, player_two, 25)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.bet(hand, player_one, 50)
+    :ok = Poker.Hand.bet(hand, player_two, 25)
 
     # Turn
-    as_player player_one, do: :ok = Poker.Hand.check(hand)
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_one, do: :ok = Poker.Hand.fold(hand)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 50)
+    :ok = Poker.Hand.check(hand, player_one)
+    :ok = Poker.Hand.check(hand, player_two)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.fold(hand, player_one)
+    :ok = Poker.Hand.bet(hand, player_two, 50)
 
     # River
-    as_player player_two, do: :ok = Poker.Hand.check(hand)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
-    as_player player_two, do: :ok = Poker.Hand.bet(hand, 100)
-    as_player player_thr, do: :ok = Poker.Hand.bet(hand, 50)
+    :ok = Poker.Hand.check(hand, player_two)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
+    :ok = Poker.Hand.bet(hand, player_two, 100)
+    :ok = Poker.Hand.bet(hand, player_thr, 50)
 
-    :timer.sleep(100)
-
-    as_player player_one, do: Poker.Table.cash_out(table)
-    as_player player_two, do: Poker.Table.cash_out(table)
-    as_player player_thr, do: Poker.Table.cash_out(table)
+    Poker.Table.cash_out(table, player_one)
+    Poker.Table.cash_out(table, player_two)
+    Poker.Table.cash_out(table, player_thr)
 
     assert Poker.Bank.balance(player_one) == 940
     assert Poker.Bank.balance(player_two) == 1270

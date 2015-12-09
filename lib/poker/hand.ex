@@ -1,47 +1,58 @@
 defmodule Poker.Hand do
   use GenServer
 
-  def start_link(table, players, config \\ [], opts \\ [])
-
-  def start_link(table, players, config, opts) when length(players) > 1 do
-    GenServer.start_link(__MODULE__, [table, players, config], opts)
+  def start_link(hand, table, config \\ [])  do
+    GenServer.start_link(__MODULE__, [hand, table, config], name: via_tuple(hand))
   end
 
-  def start_link(_table, _players, _config, _opts), do: {:error, :not_enough_players}
+  defp via_tuple(hand), do: {:via, :gproc, {:n, :l, {:hand, hand}}}
 
-  def bet(hand, amount) do
-    GenServer.call(hand, {:bet, amount})
+  def whereis(hand) do
+    :gproc.whereis_name({:n, :l, {:hand, hand}})
   end
 
-  def check(hand) do
-    GenServer.call(hand, {:bet, 0})
+  def deal(hand, players) when length(players) > 1 do
+    GenServer.cast(hand, {:deal, players})
   end
 
-  def fold(hand) do
-    GenServer.call(hand, :fold)
+  def deal(_hand, _players), do: {:error, %{reason: :not_enough_players}}
+
+  def bet(hand, player, amount) do
+    GenServer.call(hand, {:bet, player, amount})
+  end
+
+  def check(hand, player) do
+    GenServer.call(hand, {:bet, player, 0})
+  end
+
+  def fold(hand, player) do
+    GenServer.call(hand, {:fold, player, nil})
+  end
+
+  def get_state(hand) do
+    GenServer.call(hand, :get_state)
   end
 
   ### GenServer callbacks
-  def init([table, players, config]) do
+  def init([hand, table, config]) do
     seed_random_number_generator
 
-    # Since we're being started by a table process, we need to defer initialization,
-    # otherwise we'll deadlock when we try to update player balances with the table
-    send self, {:deal, get_blinds(config)}
-
-    {:ok, %{table: table, players: players, phase: :pre_flop, pot: 0, board: []}}
+    {
+      :ok,
+      %{hand: hand, table: table, phase: :pre_flop, pot: 0, board: [], blinds: get_blinds(config)}
+    }
   end
 
-  def handle_info({:deal, {small_blind, big_blind}}, state) do
-    state = state |>
+  def handle_cast({:deal, players}, state) do
+    {small_blind, big_blind} = state.blinds
+
+    state = Map.put(state, :players, players) |>
       track_initial_positions |>
       post_blinds(small_blind, big_blind) |>
       increment_pot(small_blind + big_blind) |>
       advance_action |>
       advance_action |>
-      deal(deck.new)
-
-    update_players(state)
+      deal_hands(deck.new)
 
     {:noreply, state}
   end
@@ -55,7 +66,7 @@ defmodule Poker.Hand do
   defp track_initial_positions(state) do
     players =
       Enum.with_index(state.players) |>
-      Enum.map(fn {pid, index} -> %{pid: pid, position: index} end)
+      Enum.map(fn {id, index} -> %{id: id, position: index} end)
 
     Map.put(state, :players, players)
   end
@@ -67,13 +78,13 @@ defmodule Poker.Hand do
       Enum.map(remaining, &(Map.put(&1, :to_call, big_blind)))
     ]
 
-    :ok = Poker.Table.update_balance(state.table, small.pid, -small_blind)
-    :ok = Poker.Table.update_balance(state.table, big.pid, -big_blind)
+    :ok = Poker.Table.update_balance(state.table, small.id, -small_blind)
+    :ok = Poker.Table.update_balance(state.table, big.id, -big_blind)
 
     Map.put(state, :players, players)
   end
 
-  defp deal(state, deck) do
+  defp deal_hands(state, deck) do
     {players, deck} = Enum.map_reduce state.players, deck, fn (player, [card_one,card_two|deck]) ->
       {Map.put(player, :hand, [card_one, card_two]), deck}
     end
@@ -81,38 +92,55 @@ defmodule Poker.Hand do
     state |> Map.put(:players, players) |> Map.put(:deck, deck)
   end
 
-  def handle_call(_, {player, _}, state = %{players: [%{pid: another_player}|_]}) when player != another_player do
-    {:reply, {:error, :not_active}, state}
+  def handle_call({_, player, _}, _, state = %{players: [%{id: another_player}|_]}) when player != another_player do
+    {:reply, {:error, %{reason: :not_active}}, state}
   end
 
-  def handle_call({:bet, amount}, _, state = %{players: [%{to_call: to_call}|_]}) when amount < to_call do
-    {:reply, {:error, :not_enough}, state}
+  def handle_call({:bet, _, amount}, _, state = %{players: [%{to_call: to_call}|_]}) when amount < to_call do
+    {:reply, {:error, %{reason: :not_enough}}, state}
   end
 
   # player calls
-  def handle_call({:bet, amount}, _, state = %{players: [%{pid: pid, to_call: to_call}|_]}) when amount == to_call do
-    case Poker.Table.update_balance(state.table, pid, -amount) do
+  def handle_call({:bet, player, amount}, _, state = %{players: [%{to_call: to_call}|_]}) when amount == to_call do
+    case Poker.Table.update_balance(state.table, player, -amount) do
       :ok ->
         state |> call_bet |> increment_pot(amount) |> advance_action |>
-          check_for_phase_end |> update_players |> reply_or_stop
+          check_for_phase_end |> reply_or_stop
       error ->
         {:reply, error, state}
     end
   end
 
-  def handle_call({:bet, amount}, _, state = %{players: [%{pid: pid, to_call: to_call}|_]}) when amount > to_call do
-    case Poker.Table.update_balance(state.table, pid, -amount) do
+  def handle_call({:bet, player, amount}, _, state = %{players: [%{to_call: to_call}|_]}) when amount > to_call do
+    case Poker.Table.update_balance(state.table, player, -amount) do
       :ok ->
         state |> call_bet |> increment_pot(amount) |>
           raise_remaining_players(amount - to_call) |> advance_action |>
-          check_for_phase_end |> update_players |> reply_or_stop
+          check_for_phase_end |> reply_or_stop
       error ->
         {:reply, error, state}
     end
   end
 
-  def handle_call(:fold, _, state = %{players: [_|remaining_players]}) do
-    Map.put(state, :players, remaining_players) |> check_for_phase_end |> update_players |> reply_or_stop
+  def handle_call({:fold, _, _}, _, state = %{players: [_|remaining_players]}) do
+    Map.put(state, :players, remaining_players) |> check_for_phase_end |> reply_or_stop
+  end
+
+  def handle_call(:get_state, _, state) do
+    players_with_active_flag =
+      state.players |>
+      Enum.with_index |>
+      Enum.map(fn {player, index} ->
+        active = index == 0
+        Map.put(player, :active, active)
+      end)
+
+    reply =
+      state |>
+      Map.take([:phase, :board, :pot, :players]) |>
+      Map.put(:players, players_with_active_flag)
+
+    {:reply, reply, state}
   end
 
   defp reply_or_stop(state) do
@@ -211,26 +239,9 @@ defmodule Poker.Hand do
   defp declare_winner(winner, state) do
     # IO.inspect "The winner is: #{inspect winner}"
 
-    Poker.Table.update_balance(state.table, winner.pid, state.pot)
+    Poker.Table.update_balance(state.table, winner.id, state.pot)
 
     Map.put(state, :finished, true)
-  end
-
-  defp update_players(state) do
-    [active_player|remaining_players] = state.players
-
-    update_player(active_player, state, true)
-    Enum.each remaining_players, &(update_player(&1, state, false))
-
-    state
-  end
-
-  defp update_player(player, state, active) do
-    hand_state = %{
-      hand: player.hand, active: active,
-      board: state.board, pot: state.pot
-    }
-    send player.pid, {:hand_state, hand_state}
   end
 
   defp seed_random_number_generator do

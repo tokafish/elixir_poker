@@ -13,7 +13,7 @@ defmodule GenPoker do
       worker(GenPoker.Repo, []),
       # Here you could define other workers and supervisors as children
       worker(Poker.Bank, []),
-      supervisor(Poker.Table.Supervisor, [:table_one, 6])
+      supervisor(Poker.Table.Supervisor, ["table_one", 6])
     ]
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html

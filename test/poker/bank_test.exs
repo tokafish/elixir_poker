@@ -8,10 +8,10 @@ defmodule Poker.BankTest do
 
     assert Poker.Bank.withdraw(:player_one, 75) == :ok
     assert Poker.Bank.balance(:player_one) == 25
-    assert Poker.Bank.withdraw(:player_one, 75) == {:error, :insufficient_funds}
+    assert Poker.Bank.withdraw(:player_one, 75) == {:error, %{reason: :insufficient_funds}}
     assert Poker.Bank.withdraw(:player_one, -75) == :error
 
-    assert Poker.Bank.withdraw(:player_two, 35) == {:error, :insufficient_funds}
+    assert Poker.Bank.withdraw(:player_two, 35) == {:error, %{reason: :insufficient_funds}}
     assert Poker.Bank.balance(:player_two) == 0
 
     Poker.Bank.deposit(:player_one, -100)

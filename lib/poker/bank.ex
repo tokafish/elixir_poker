@@ -2,24 +2,22 @@ defmodule Poker.Bank do
   use GenServer
 
   def start_link do
-    GenServer.start_link(__MODULE__, [], name: __MODULE__)
+    GenServer.start_link(__MODULE__, %{}, name: via_tuple)
   end
 
   def deposit(player, amount) do
-    GenServer.cast(__MODULE__, {:deposit, player, amount})
+    GenServer.cast(via_tuple, {:deposit, player, amount})
   end
 
   def withdraw(player, amount) do
-    GenServer.call(__MODULE__, {:withdraw, player, amount})
+    GenServer.call(via_tuple, {:withdraw, player, amount})
   end
 
   def balance(player) do
-    GenServer.call(__MODULE__, {:balance, player})
+    GenServer.call(via_tuple, {:balance, player})
   end
 
-  def init(_) do
-    {:ok, %{}}
-  end
+  defp via_tuple, do: {:via, :gproc, {:n, :l, __MODULE__}}
 
   def handle_cast({:deposit, player, amount}, state) when amount >= 0 do
     {
@@ -37,7 +35,7 @@ defmodule Poker.Bank do
       {:ok, current} when current >= amount ->
         {:reply, :ok, Map.put(state, player, current - amount)}
       _ ->
-        {:reply, {:error, :insufficient_funds}, state}
+        {:reply, {:error, %{reason: :insufficient_funds}}, state}
     end
   end
 

@@ -1,5 +1,6 @@
 defmodule Poker.TableTest do
   use ExUnit.Case, async: false
+  alias Poker.Table
 
   @num_seats 3
 
@@ -7,51 +8,45 @@ defmodule Poker.TableTest do
     Poker.Bank.start_link
     players = :ets.new(:players, [:public])
 
-    {:ok, table} = Poker.Table.start_link(nil, players, :table_name, @num_seats)
-    {:ok, [table: table]}
+    {:ok, pid} = Table.start_link(:test_table, nil, players, @num_seats)
+    {:ok, [manager: pid]}
   end
 
-  test "sitting and leaving", %{table: table} do
-    assert Poker.Table.players(table) == []
+  test "sitting and leaving", %{manager: manager} do
+    assert Table.get_state(manager) == %{hand: nil, players: [], num_seats: @num_seats}
 
-    player_two = self
-    spawn fn ->
-      Poker.Table.sit(table, 1)
-      send player_two, :proceed
-    end
+    Table.sit(manager, :player_one, 1)
+    assert [%{seat: 1, id: :player_one}] = Table.get_state(manager).players
 
-    assert_receive :proceed
-    assert [%{seat: 1}] = Poker.Table.players(table)
+    assert Table.sit(manager, :player_two, 1) == {:error, %{reason: :seat_taken}}
+    assert Table.sit(manager, :player_two, @num_seats + 1) == {:error, %{reason: :seat_unavailable}}
+    assert Table.sit(manager, :player_two, 3) == :ok
 
-    assert Poker.Table.sit(table, 1) == {:error, :seat_taken}
-    assert Poker.Table.sit(table, @num_seats + 1) == {:error, :seat_unavailable}
-    assert Poker.Table.sit(table, 3) == :ok
+    assert [%{seat: 1, id: :player_one}, %{seat: 3, id: :player_two}] = Table.get_state(manager).players
 
-    assert [%{seat: 1}, %{seat: 3}] = Poker.Table.players(table)
+    Table.leave(manager, :player_two)
 
-    Poker.Table.leave(table)
-
-    assert [%{seat: 1}] = Poker.Table.players(table)
+    assert [%{seat: 1, id: :player_one}] = Table.get_state(manager).players
   end
 
-  test "buying in and cashing out", %{table: table} do
-    Poker.Bank.deposit(self, 600)
-    assert Poker.Table.sit(table, 1) == :ok
+  test "buying in and cashing out", %{manager: manager} do
+    Poker.Bank.deposit(:player, 600)
+    assert Table.sit(manager, :player, 1) == :ok
 
-    assert Poker.Table.buy_in(table, 200) == :ok
-    assert [%{balance: 200, seat: 1}] = Poker.Table.players(table)
-    assert Poker.Bank.balance(self) == 400
+    assert Table.buy_in(manager, :player, 200) == :ok
+    assert [%{balance: 200, seat: 1}] = Table.get_state(manager).players
+    assert Poker.Bank.balance(:player) == 400
 
-    assert Poker.Table.buy_in(table, 350) == :ok
-    assert [%{balance: 550, seat: 1}] = Poker.Table.players(table)
-    assert Poker.Bank.balance(self) == 50
+    assert Table.buy_in(manager, :player, 350) == :ok
+    assert [%{balance: 550, seat: 1}] = Table.get_state(manager).players
+    assert Poker.Bank.balance(:player) == 50
 
-    assert Poker.Table.buy_in(table, 200) == {:error, :insufficient_funds}
-    assert [%{balance: 550, seat: 1}] = Poker.Table.players(table)
-    assert Poker.Bank.balance(self) == 50
+    assert Table.buy_in(manager, :player, 200) == {:error, %{reason: :insufficient_funds}}
+    assert [%{balance: 550, seat: 1}] = Table.get_state(manager).players
+    assert Poker.Bank.balance(:player) == 50
 
-    assert Poker.Table.cash_out(table) == :ok
-    assert [%{balance: 0, seat: 1}] = Poker.Table.players(table)
-    assert Poker.Bank.balance(self) == 600
+    assert Table.cash_out(manager, :player) == :ok
+    assert [%{balance: 0, seat: 1}] = Table.get_state(manager).players
+    assert Poker.Bank.balance(:player) == 600
   end
 end

@@ -1,7 +1,7 @@
 defmodule GenPoker.Endpoint do
   use Phoenix.Endpoint, otp_app: :gen_poker
 
-  socket "/socket", GenPoker.UserSocket
+  socket "/socket", GenPoker.PlayerSocket
 
   # Serve at "/" the static files from "priv/static" directory.
   #

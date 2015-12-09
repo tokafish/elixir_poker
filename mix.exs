@@ -19,7 +19,7 @@ defmodule GenPoker.Mixfile do
   def application do
     [mod: {GenPoker, []},
      applications: [:phoenix, :phoenix_html, :cowboy, :logger,
-                    :phoenix_ecto, :postgrex]]
+                    :phoenix_ecto, :postgrex, :gproc]]
   end
 
   # Specifies which paths to compile per environment.
@@ -35,7 +35,9 @@ defmodule GenPoker.Mixfile do
      {:postgrex, ">= 0.0.0"},
      {:phoenix_html, "~> 2.1"},
      {:phoenix_live_reload, "~> 1.0", only: :dev},
-     {:cowboy, "~> 1.0"}]
+     {:cowboy, "~> 1.0"},
+     {:gproc, "~> 0.5"},
+     {:uuid, "~> 1.1"}]
   end
 
   # Aliases are shortcut or tasks specific to the current project.
